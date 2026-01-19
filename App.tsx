@@ -341,22 +341,18 @@ const App: React.FC = () => {
     const targetDpi = dpiOverride || config.exportDpi;
     const scaleFactor = targetDpi / 72;
     
-    // Layout Constants
-    const headerHeight = 100 * scaleFactor;
+    // Calculate layout parameters
+    const headerHeight = 90 * scaleFactor;
     const legendPadding = 40 * scaleFactor;
-    const swatchSize = 28 * scaleFactor; // Larger swatch
-    const textGap = 10 * scaleFactor;
     const legendItemWidth = 140 * scaleFactor;
-    const legendItemHeight = 50 * scaleFactor; // More vertical space
-    const contentWidth = originalWidth * scaleFactor;
-    const itemsPerRow = Math.max(1, Math.floor((contentWidth - (40 * scaleFactor)) / legendItemWidth));
-    
+    const legendItemHeight = 40 * scaleFactor;
+    const itemsPerRow = Math.max(1, Math.floor((originalWidth * scaleFactor) / legendItemWidth));
     const sortedColors = [...beadColors].sort((a, b) => b.count - a.count);
     const numRows = Math.ceil(sortedColors.length / itemsPerRow);
     const legendHeight = (numRows * legendItemHeight) + (legendPadding * 2) + (30 * scaleFactor); 
     
     const canvas = document.createElement("canvas");
-    canvas.width = contentWidth; 
+    canvas.width = originalWidth * scaleFactor; 
     canvas.height = headerHeight + (originalHeight * scaleFactor) + legendHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -376,109 +372,72 @@ const App: React.FC = () => {
     ]);
 
     // Background
-    ctx.fillStyle = "#ffffff"; 
+    ctx.fillStyle = "white"; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // --- Header Rendering ---
-    const logoSize = 60 * scaleFactor;
-    const margin = 30 * scaleFactor;
-    
-    // Draw Logo
+    // Header Rendering
+    const logoSize = 50 * scaleFactor;
+    const margin = 20 * scaleFactor;
     ctx.drawImage(logoImg, margin, (headerHeight - logoSize) / 2, logoSize, logoSize);
     
-    // Brand Name
     ctx.fillStyle = "#1e293b";
-    ctx.font = `900 ${32 * scaleFactor}px 'Dosis', sans-serif`;
-    ctx.textBaseline = "middle";
-    ctx.textAlign = "left";
-    ctx.fillText("BIG DOU", margin + logoSize + 15 * scaleFactor, headerHeight / 2 - 8 * scaleFactor);
+    ctx.font = `black ${28 * scaleFactor}px Dosis, sans-serif`;
+    ctx.fillText("BIG DOU", margin + logoSize + 15 * scaleFactor, headerHeight / 2 + 5 * scaleFactor);
     
-    // Subtitle
-    ctx.fillStyle = "#64748b";
-    ctx.font = `bold ${14 * scaleFactor}px sans-serif`;
-    ctx.fillText("拼豆图纸生成器 (Perler Pattern Generator)", margin + logoSize + 15 * scaleFactor, headerHeight / 2 + 15 * scaleFactor);
-    
-    // Meta Info (Right aligned)
-    ctx.textAlign = "right";
     ctx.fillStyle = "#94a3b8";
     ctx.font = `bold ${12 * scaleFactor}px sans-serif`;
-    ctx.fillText(`规格: ${config.beadSize} | 尺寸: ${config.pixelWidth}x${patternSize.height} | DPI: ${targetDpi}`, canvas.width - margin, headerHeight / 2);
+    ctx.fillText("拼豆图纸生成器 (Perler Pattern Generator)", margin + logoSize + 15 * scaleFactor, headerHeight / 2 + 25 * scaleFactor);
     
-    // Separator Line
-    ctx.strokeStyle = "#e2e8f0";
-    ctx.lineWidth = 2 * scaleFactor;
+    // Meta info in header
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#64748b";
+    ctx.font = `bold ${11 * scaleFactor}px sans-serif`;
+    ctx.fillText(`规格: ${config.beadSize} | 导出DPI: ${targetDpi}`, canvas.width - margin, headerHeight / 2 + 10 * scaleFactor);
+    ctx.textAlign = "left";
+
+    // Separator line
+    ctx.strokeStyle = "#f1f5f9";
+    ctx.lineWidth = 1 * scaleFactor;
     ctx.beginPath();
-    ctx.moveTo(margin, headerHeight);
-    ctx.lineTo(canvas.width - margin, headerHeight);
+    ctx.moveTo(margin, headerHeight - 1);
+    ctx.lineTo(canvas.width - margin, headerHeight - 1);
     ctx.stroke();
 
-    // --- Main Pattern ---
+    // Main Pattern Drawing
     ctx.imageSmoothingEnabled = false; 
     ctx.drawImage(mainImg, 0, headerHeight, originalWidth * scaleFactor, originalHeight * scaleFactor);
 
-    // --- Material List ---
+    // Legend Drawing
     const legendYStart = headerHeight + (originalHeight * scaleFactor) + legendPadding;
-    
-    // Legend Title
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#334155";
-    ctx.font = `900 ${20 * scaleFactor}px sans-serif`;
-    ctx.fillText("材料清单 (Material List)", margin, legendYStart);
-    
-    const gridStartY = legendYStart + (40 * scaleFactor);
+    ctx.fillStyle = "#5046e5";
+    ctx.font = `bold ${16 * scaleFactor}px sans-serif`;
+    ctx.fillText("材料清单统计 (Material List)", 20 * scaleFactor, legendYStart);
     
     sortedColors.forEach((color, index) => {
       const col = index % itemsPerRow;
       const row = Math.floor(index / itemsPerRow);
+      const x = 20 * scaleFactor + (col * legendItemWidth);
+      const y = legendYStart + (30 * scaleFactor) + (row * legendItemHeight);
       
-      const x = margin + (col * legendItemWidth);
-      const y = gridStartY + (row * legendItemHeight);
-      
-      // 1. Color Swatch
+      // Color Swatch
       ctx.fillStyle = color.hex;
-      
+      const swatchSize = 20 * scaleFactor;
       if ((ctx as any).roundRect) {
-        ctx.beginPath();
-        (ctx as any).roundRect(x, y, swatchSize, swatchSize, 6 * scaleFactor);
+        (ctx as any).roundRect(x, y, swatchSize, swatchSize, 4 * scaleFactor);
         ctx.fill();
       } else {
         ctx.fillRect(x, y, swatchSize, swatchSize);
       }
       
-      // Swatch Border (for light colors)
-      ctx.strokeStyle = "rgba(0,0,0,0.08)";
-      ctx.lineWidth = 1 * scaleFactor;
-      if ((ctx as any).roundRect) {
-        ctx.beginPath();
-        (ctx as any).roundRect(x, y, swatchSize, swatchSize, 6 * scaleFactor);
-        ctx.stroke();
-      } else {
-        ctx.strokeRect(x, y, swatchSize, swatchSize);
-      }
-      
-      // 2. Text Info
-      const textX = x + swatchSize + textGap;
-      const swatchCenterY = y + (swatchSize / 2);
-      
-      // Color ID
-      ctx.fillStyle = "#0f172a"; // Darker slate
-      ctx.font = `bold ${14 * scaleFactor}px sans-serif`;
-      ctx.textBaseline = "bottom";
-      ctx.fillText(color.id, textX, swatchCenterY - (2 * scaleFactor));
-      
-      // Count
-      ctx.fillStyle = "#64748b"; // Muted slate
+      // ID and Count
+      ctx.fillStyle = "#1e293b";
       ctx.font = `bold ${12 * scaleFactor}px sans-serif`;
-      ctx.textBaseline = "top";
-      ctx.fillText(`${color.count} 颗`, textX, swatchCenterY + (2 * scaleFactor));
+      ctx.fillText(color.id, x + swatchSize + 8 * scaleFactor, y + swatchSize * 0.5);
+      
+      ctx.fillStyle = "#6366f1";
+      ctx.font = `bold ${11 * scaleFactor}px sans-serif`;
+      ctx.fillText(`${color.count} 颗`, x + swatchSize + 8 * scaleFactor, y + swatchSize);
     });
-
-    // Copyright Footer (Optional but nice)
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#cbd5e1";
-    ctx.font = `${10 * scaleFactor}px sans-serif`;
-    ctx.textBaseline = "bottom";
-    ctx.fillText("Generated by BIG DOU", canvas.width / 2, canvas.height - (10 * scaleFactor));
 
     // Finalize
     const pngUrl = canvas.toDataURL("image/png");
