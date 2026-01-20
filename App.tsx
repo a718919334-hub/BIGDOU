@@ -65,6 +65,10 @@ const App: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
+  // Touch handling refs
+  const lastTouchRef = useRef<{ x: number; y: number } | null>(null);
+  const lastPinchDistRef = useRef<number | null>(null);
+
   const pixelSize = 24;
   const paddingUnits = 2;
   const rulerUnits = 1;
@@ -325,6 +329,65 @@ const App: React.FC = () => {
   const handleMouseUp = () => setIsDragging(false);
   const handleWheel = (e: React.WheelEvent) => { e.preventDefault(); const zoomSpeed = 0.001; const delta = -e.deltaY; const newScale = Math.min(Math.max(0.1, scale + delta * zoomSpeed), 5); if (containerRef.current) { const rect = containerRef.current.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top; const zoomRatio = newScale / scale; setOffset({ x: mouseX - (mouseX - offset.x) * zoomRatio, y: mouseY - (mouseY - offset.y) * zoomRatio }); setScale(newScale); } };
 
+  // --- Touch Event Handlers for Mobile (Pan & Pinch-to-Zoom) ---
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      lastPinchDistRef.current = dist;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    // Prevent browser default behavior like scroll/zoom if necessary,
+    // though 'touchAction: none' on container is the primary method.
+    
+    if (e.touches.length === 1 && lastTouchRef.current) {
+      // Pan
+      const dx = e.touches[0].clientX - lastTouchRef.current.x;
+      const dy = e.touches[0].clientY - lastTouchRef.current.y;
+      setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2 && lastPinchDistRef.current) {
+      // Pinch Zoom
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      
+      const zoomFactor = dist / lastPinchDistRef.current;
+      const newScale = Math.min(Math.max(0.1, scale * zoomFactor), 5);
+      
+      // Calculate zoom center (midpoint of two fingers)
+      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouseX = centerX - rect.left;
+        const mouseY = centerY - rect.top;
+        const scaleRatio = newScale / scale;
+        
+        setOffset({ 
+          x: mouseX - (mouseX - offset.x) * scaleRatio, 
+          y: mouseY - (mouseY - offset.y) * scaleRatio 
+        });
+      }
+
+      setScale(newScale);
+      lastPinchDistRef.current = dist;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    lastTouchRef.current = null;
+    lastPinchDistRef.current = null;
+  };
+
   const updateConfig = (key: keyof PatternConfig, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
   };
@@ -341,18 +404,22 @@ const App: React.FC = () => {
     const targetDpi = dpiOverride || config.exportDpi;
     const scaleFactor = targetDpi / 72;
     
-    // Calculate layout parameters
-    const headerHeight = 90 * scaleFactor;
+    // Layout Constants
+    const headerHeight = 100 * scaleFactor;
     const legendPadding = 40 * scaleFactor;
+    const swatchSize = 28 * scaleFactor; // Larger swatch
+    const textGap = 10 * scaleFactor;
     const legendItemWidth = 140 * scaleFactor;
-    const legendItemHeight = 40 * scaleFactor;
-    const itemsPerRow = Math.max(1, Math.floor((originalWidth * scaleFactor) / legendItemWidth));
+    const legendItemHeight = 50 * scaleFactor; // More vertical space
+    const contentWidth = originalWidth * scaleFactor;
+    const itemsPerRow = Math.max(1, Math.floor((contentWidth - (40 * scaleFactor)) / legendItemWidth));
+    
     const sortedColors = [...beadColors].sort((a, b) => b.count - a.count);
     const numRows = Math.ceil(sortedColors.length / itemsPerRow);
     const legendHeight = (numRows * legendItemHeight) + (legendPadding * 2) + (30 * scaleFactor); 
     
     const canvas = document.createElement("canvas");
-    canvas.width = originalWidth * scaleFactor; 
+    canvas.width = contentWidth; 
     canvas.height = headerHeight + (originalHeight * scaleFactor) + legendHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -372,72 +439,109 @@ const App: React.FC = () => {
     ]);
 
     // Background
-    ctx.fillStyle = "white"; 
+    ctx.fillStyle = "#ffffff"; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Header Rendering
-    const logoSize = 50 * scaleFactor;
-    const margin = 20 * scaleFactor;
+    // --- Header Rendering ---
+    const logoSize = 60 * scaleFactor;
+    const margin = 30 * scaleFactor;
+    
+    // Draw Logo
     ctx.drawImage(logoImg, margin, (headerHeight - logoSize) / 2, logoSize, logoSize);
     
+    // Brand Name
     ctx.fillStyle = "#1e293b";
-    ctx.font = `black ${28 * scaleFactor}px Dosis, sans-serif`;
-    ctx.fillText("BIG DOU", margin + logoSize + 15 * scaleFactor, headerHeight / 2 + 5 * scaleFactor);
+    ctx.font = `900 ${32 * scaleFactor}px 'Dosis', sans-serif`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.fillText("BIG DOU", margin + logoSize + 15 * scaleFactor, headerHeight / 2 - 8 * scaleFactor);
     
+    // Subtitle
+    ctx.fillStyle = "#64748b";
+    ctx.font = `bold ${14 * scaleFactor}px sans-serif`;
+    ctx.fillText("拼豆图纸生成器 (Perler Pattern Generator)", margin + logoSize + 15 * scaleFactor, headerHeight / 2 + 15 * scaleFactor);
+    
+    // Meta Info (Right aligned)
+    ctx.textAlign = "right";
     ctx.fillStyle = "#94a3b8";
     ctx.font = `bold ${12 * scaleFactor}px sans-serif`;
-    ctx.fillText("拼豆图纸生成器 (Perler Pattern Generator)", margin + logoSize + 15 * scaleFactor, headerHeight / 2 + 25 * scaleFactor);
+    ctx.fillText(`规格: ${config.beadSize} | 尺寸: ${config.pixelWidth}x${patternSize.height} | DPI: ${targetDpi}`, canvas.width - margin, headerHeight / 2);
     
-    // Meta info in header
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#64748b";
-    ctx.font = `bold ${11 * scaleFactor}px sans-serif`;
-    ctx.fillText(`规格: ${config.beadSize} | 导出DPI: ${targetDpi}`, canvas.width - margin, headerHeight / 2 + 10 * scaleFactor);
-    ctx.textAlign = "left";
-
-    // Separator line
-    ctx.strokeStyle = "#f1f5f9";
-    ctx.lineWidth = 1 * scaleFactor;
+    // Separator Line
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = 2 * scaleFactor;
     ctx.beginPath();
-    ctx.moveTo(margin, headerHeight - 1);
-    ctx.lineTo(canvas.width - margin, headerHeight - 1);
+    ctx.moveTo(margin, headerHeight);
+    ctx.lineTo(canvas.width - margin, headerHeight);
     ctx.stroke();
 
-    // Main Pattern Drawing
+    // --- Main Pattern ---
     ctx.imageSmoothingEnabled = false; 
     ctx.drawImage(mainImg, 0, headerHeight, originalWidth * scaleFactor, originalHeight * scaleFactor);
 
-    // Legend Drawing
+    // --- Material List ---
     const legendYStart = headerHeight + (originalHeight * scaleFactor) + legendPadding;
-    ctx.fillStyle = "#5046e5";
-    ctx.font = `bold ${16 * scaleFactor}px sans-serif`;
-    ctx.fillText("材料清单统计 (Material List)", 20 * scaleFactor, legendYStart);
+    
+    // Legend Title
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#334155";
+    ctx.font = `900 ${20 * scaleFactor}px sans-serif`;
+    ctx.fillText("材料清单 (Material List)", margin, legendYStart);
+    
+    const gridStartY = legendYStart + (40 * scaleFactor);
     
     sortedColors.forEach((color, index) => {
       const col = index % itemsPerRow;
       const row = Math.floor(index / itemsPerRow);
-      const x = 20 * scaleFactor + (col * legendItemWidth);
-      const y = legendYStart + (30 * scaleFactor) + (row * legendItemHeight);
       
-      // Color Swatch
+      const x = margin + (col * legendItemWidth);
+      const y = gridStartY + (row * legendItemHeight);
+      
+      // 1. Color Swatch
       ctx.fillStyle = color.hex;
-      const swatchSize = 20 * scaleFactor;
+      
       if ((ctx as any).roundRect) {
-        (ctx as any).roundRect(x, y, swatchSize, swatchSize, 4 * scaleFactor);
+        ctx.beginPath();
+        (ctx as any).roundRect(x, y, swatchSize, swatchSize, 6 * scaleFactor);
         ctx.fill();
       } else {
         ctx.fillRect(x, y, swatchSize, swatchSize);
       }
       
-      // ID and Count
-      ctx.fillStyle = "#1e293b";
-      ctx.font = `bold ${12 * scaleFactor}px sans-serif`;
-      ctx.fillText(color.id, x + swatchSize + 8 * scaleFactor, y + swatchSize * 0.5);
+      // Swatch Border (for light colors)
+      ctx.strokeStyle = "rgba(0,0,0,0.08)";
+      ctx.lineWidth = 1 * scaleFactor;
+      if ((ctx as any).roundRect) {
+        ctx.beginPath();
+        (ctx as any).roundRect(x, y, swatchSize, swatchSize, 6 * scaleFactor);
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(x, y, swatchSize, swatchSize);
+      }
       
-      ctx.fillStyle = "#6366f1";
-      ctx.font = `bold ${11 * scaleFactor}px sans-serif`;
-      ctx.fillText(`${color.count} 颗`, x + swatchSize + 8 * scaleFactor, y + swatchSize);
+      // 2. Text Info
+      const textX = x + swatchSize + textGap;
+      const swatchCenterY = y + (swatchSize / 2);
+      
+      // Color ID
+      ctx.fillStyle = "#0f172a"; // Darker slate
+      ctx.font = `bold ${14 * scaleFactor}px sans-serif`;
+      ctx.textBaseline = "bottom";
+      ctx.fillText(color.id, textX, swatchCenterY - (2 * scaleFactor));
+      
+      // Count
+      ctx.fillStyle = "#64748b"; // Muted slate
+      ctx.font = `bold ${12 * scaleFactor}px sans-serif`;
+      ctx.textBaseline = "top";
+      ctx.fillText(`${color.count} 颗`, textX, swatchCenterY + (2 * scaleFactor));
     });
+
+    // Copyright Footer (Optional but nice)
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = `${10 * scaleFactor}px sans-serif`;
+    ctx.textBaseline = "bottom";
+    ctx.fillText("Generated by BIG DOU", canvas.width / 2, canvas.height - (10 * scaleFactor));
 
     // Finalize
     const pngUrl = canvas.toDataURL("image/png");
@@ -492,8 +596,19 @@ const App: React.FC = () => {
           />
         </aside>
 
-        <div ref={containerRef} className="flex-1 relative overflow-hidden cursor-crosshair bg-slate-50/50" 
-             onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onWheel={handleWheel}>
+        <div 
+          ref={containerRef} 
+          className="flex-1 relative overflow-hidden cursor-crosshair bg-slate-50/50" 
+          style={{ touchAction: 'none' }} // Disable browser handling of gestures
+          onMouseDown={handleMouseDown} 
+          onMouseMove={handleMouseMove} 
+          onMouseUp={handleMouseUp} 
+          onMouseLeave={handleMouseUp} 
+          onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center">
             <div className="bg-white/90 backdrop-blur rounded-2xl shadow-lg shadow-slate-200/50 border border-slate-200 p-1.5 flex items-center gap-1">
